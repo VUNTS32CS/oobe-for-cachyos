@@ -15,7 +15,7 @@ fi
 
 # Enter alternate screen buffer (overlay mode without clearing previous terminal text)
 OVERLAY_ACTIVE=1
-SCREEN_LOG="$(mktemp /tmp/debloater_screen.XXXXXX)"
+SCREEN_LOG="$(mktemp /tmp/oobe_screen.XXXXXX)"
 printf "\033[?1049h\033[H"
 
 # Record persistent output so it can be pasted onto the original terminal screen on exit
