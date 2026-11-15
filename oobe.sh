@@ -379,7 +379,7 @@ execute_question() {
                 for pkg in "${installed_fw[@]}"; do
                     if [[ "$PLATFORM" == "Desktop" ]]; then
                         case "$pkg" in
-                            linux-firmware-amd|linux-firmware-other|linux-firmware-realtek|linux-firmware-nvidia)
+                            linux-firmware-amd|linux-firmware-other|linux-firmware-realtek|linux-firmware-nvidia|linux-firmware-whence)
                                 continue
                                 ;;
                         esac
@@ -395,7 +395,7 @@ execute_question() {
 
                 if (( ${#pkgs_to_remove[@]} > 0 )); then
                     out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "Removing packages: ${pkgs_to_remove[*]}")"
-                    sudo pacman -Rnsdd --noconfirm "${pkgs_to_remove[@]}" 2>&1 | tee -a "$SCREEN_LOG"
+                    sudo pacman -Rndd --noconfirm "${pkgs_to_remove[@]}" 2>&1 | tee -a "$SCREEN_LOG"
                 else
                     out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "No unneeded linux-firmware packages found to remove.")"
                 fi
