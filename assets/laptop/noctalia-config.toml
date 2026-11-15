@@ -1,0 +1,460 @@
+[accessibility]
+ui_scale = 1.1500000096857548
+
+[audio]
+enable_sounds = true
+
+[bar.default]
+background_opacity = 0.99999997764825821
+capsule = true
+capsule_fill = "on_secondary"
+capsule_opacity = 0.0
+capsule_padding = 5.0
+capsule_radius = 0
+capsule_thickness = 0.74999998696148396
+center = [ "clock", "spacer_1", "active_window" ]
+compositor_blur = false
+concave_edge_corners = true
+contact_shadow = false
+end = [ "media", "spacer_1", "tray", "group:g2", "notifications", "session" ]
+font_family = "Liberation Sans"
+margin_edge = 0
+margin_ends = 0
+padding = 13
+radius = 0
+radius_bottom_left = 0
+radius_bottom_right = 0
+radius_top_left = 0
+radius_top_right = 0
+scale = 1.1000000000000001
+shadow = false
+start = [ "workspaces", "launcher", "spacer_1", "group:g1" ]
+thickness = 30
+
+    [[bar.default.capsule_group]]
+    accordion = true
+    accordion_direction = "end"
+    border = ""
+    enabled = false
+    fill = "on_secondary"
+    id = "g1"
+    members = [ "temp", "sysmon_2", "sysmon_3" ]
+    opacity = 0.69999998807907104
+    padding = 6.0
+
+    [[bar.default.capsule_group]]
+    accordion = false
+    accordion_direction = "end"
+    enabled = true
+    fill = "on_secondary"
+    id = "g2"
+    members = [ "volume", "brightness", "battery" ]
+    opacity = 0.59999996423721313
+    padding = 6.0
+
+[battery]
+warning_threshold = 20
+
+[brightness]
+minimum_brightness = 0.0099999997764825821
+sync_all_monitors = true
+
+[calendar]
+enabled = true
+refresh_minutes = 60
+
+    [calendar.account.personal_google]
+    name = "Personal calendar"
+    type = "google"
+
+[control_center]
+hidden_tabs = [ "monitor" ]
+sidebar = "full"
+
+    [[control_center.shortcuts]]
+    type = "caffeine"
+
+    [[control_center.shortcuts]]
+    type = "nightlight"
+
+    [[control_center.shortcuts]]
+    type = "notification"
+
+    [[control_center.shortcuts]]
+    type = "power_profile"
+
+[desktop_widgets]
+enabled = false
+schema_version = 2
+widget_order = []
+
+    [desktop_widgets.grid]
+    cell_size = 16
+    major_interval = 4
+    visible = true
+
+    [desktop_widgets.widget]
+
+[dock]
+background_opacity = 0.99999997764825821
+concave_edge_corners = false
+radius = 0
+shadow = false
+
+[hooks]
+started = "wl-gammactl-rust -g 1.1 -b 1.05 || udiskie --smart-tray"
+
+[hot_corners]
+delay_ms = 50
+enabled = true
+
+    [hot_corners.top_left]
+    action = "launcher"
+
+[idle]
+behavior_order = [ "lock", "screen-off", "lock-and-suspend" ]
+pre_action_fade_seconds = 5
+
+    [idle.behavior.lock]
+    action = "lock"
+    enabled = true
+    timeout = 90.0
+
+    [idle.behavior.lock-and-suspend]
+    action = "lock_and_suspend"
+    enabled = true
+    timeout = 365.0
+
+    [idle.behavior.screen-off]
+    action = "screen_off"
+    enabled = true
+    locked_timeout = 7.0
+    timeout = 45.0
+
+[location]
+auto_locate = true
+
+[lockscreen]
+blurred_desktop = true
+fingerprint = false
+grace_period_seconds = 7
+
+[lockscreen_widgets]
+enabled = true
+schema_version = 2
+widget_order = [ "lockscreen-login-box@eDP-1" ]
+
+    [lockscreen_widgets.grid]
+    cell_size = 16
+    major_interval = 4
+    visible = true
+
+    [lockscreen_widgets.widget."lockscreen-login-box@eDP-1"]
+    box_height = 196.0
+    box_width = 810.0
+    cx = 640.0001220703125
+    cy = 538.0
+    output = "eDP-1"
+    placement_height = 720.0
+    placement_width = 1280.0
+    rotation = 0.0
+    type = "login_box"
+
+        [lockscreen_widgets.widget."lockscreen-login-box@eDP-1".settings]
+        background_color = "surface_container"
+        background_opacity = 0.88
+        background_radius = 12.0
+        center_password_text = false
+        input_opacity = 1.0
+        input_radius = 6.0
+        layout = "regular"
+        show_caps_lock = true
+        show_keyboard_layout = true
+        show_login_button = true
+        show_media = true
+        show_password_reveal = true
+        show_session_buttons = true
+        show_unlock_hint = true
+        show_weather = true
+
+    [lockscreen_widgets.widget.lockscreen-widget-0000000000000001]
+    box_height = 0.0
+    box_width = 0.0
+    cx = 960.0
+    cy = 104.5
+    output = "eDP-1"
+    placement_height = 1080.0
+    placement_width = 1920.0
+    rotation = 0.0
+    type = "clock"
+
+    [lockscreen_widgets.widget.lockscreen-widget-0000000000000002]
+    box_height = 176.0
+    box_width = 336.0
+    cx = 1728.0
+    cy = 140.0
+    output = "eDP-1"
+    placement_height = 1080.0
+    placement_width = 1920.0
+    rotation = 0.0
+    type = "weather"
+
+    [lockscreen_widgets.widget.lockscreen-widget-0000000000000003]
+    box_height = 192.0
+    box_width = 448.0
+    cx = 1664.0
+    cy = 956.0
+    output = "eDP-1"
+    placement_height = 1080.0
+    placement_width = 1920.0
+    rotation = 0.0
+    type = "media_player"
+
+        [lockscreen_widgets.widget.lockscreen-widget-0000000000000003.settings]
+        background = true
+        background_opacity = 0.0
+
+    [lockscreen_widgets.widget.lockscreen-widget-0000000000000004]
+    box_height = 160.0
+    box_width = 304.0
+    cx = 184.0
+    cy = 132.0
+    output = "eDP-1"
+    placement_height = 1080.0
+    placement_width = 1920.0
+    rotation = 0.0
+    type = "sysmon"
+
+        [lockscreen_widgets.widget.lockscreen-widget-0000000000000004.settings]
+        background_padding = 8
+        stat = "ram_pct"
+        stat2 = "cpu_temp"
+
+[nightlight]
+enabled = true
+temperature_night = 2500
+
+[notification]
+background_opacity = 0.99999997764825821
+
+[osd]
+background_opacity = 0.99999997764825821
+hide_delay_ms = 2650
+offset_x = 45
+offset_y = 20
+orientation = "vertical"
+position = "top_left"
+position_vertical = "top_left"
+
+[plugin_settings."thaer99ob/default-apps"]
+manager_placement = "attached"
+
+[plugins]
+enabled = [ "noctalia/translator", "thaer99ob/default-apps" ]
+
+[shell]
+app_icon_color = "#A0A0D2"
+circular_avatar = false
+clipboard_history_max_entries = 20
+clipboard_image_action_command = "satty -f -"
+corner_radius_scale = 0.0
+font_family = "Adwaita Sans"
+launch_apps_as_systemd_services = true
+panel_anchor_bar = "default"
+password_style = "random"
+polkit_agent = true
+popup_shadows = false
+settings_show_advanced = true
+settings_window_translucent = false
+telemetry_enabled = true
+
+    [shell.animation]
+    enabled = false
+    speed = 1.0500000156462193
+
+    [shell.greeter_sync]
+    auto_sync = true
+
+    [shell.keyboard_layout.custom_labels]
+    "English (US)" = "Turkish (TR)"
+
+    [shell.launcher]
+    categories = false
+    colorize_icons = true
+    layout = "simple"
+
+        [shell.launcher.providers.wallpaper]
+        global = false
+
+    [shell.panel]
+    launcher_placement = "attached"
+    open_near_click_control_center = true
+    open_near_click_launcher = true
+    session_placement = "floating"
+    session_position = "center"
+    shadow = false
+    transparency_mode = "solid"
+
+    [shell.screen_corners]
+    enabled = false
+    size = 50
+
+    [shell.screenshot]
+    annotate = true
+    confirm_region = true
+    copy_to_clipboard = true
+    directory = "/home/seyma/Resimler/Screenshots"
+    pipe_command = "satty -f"
+    pipe_to_command = true
+    region_modifier = "alt"
+    remember_last_region = true
+    save_to_file = false
+    show_region_hint = false
+
+    [[shell.session.actions]]
+    action = "lock"
+    countdown_seconds = 0.0
+    enabled = true
+    shortcut = "1"
+    variant = "default"
+
+    [[shell.session.actions]]
+    action = "logout"
+    countdown_seconds = 0.0
+    enabled = true
+    shortcut = "2"
+    variant = "default"
+
+    [[shell.session.actions]]
+    action = "lock_and_suspend"
+    countdown_seconds = 3.0
+    enabled = true
+    shortcut = "3"
+    variant = "default"
+
+    [[shell.session.actions]]
+    action = "reboot"
+    countdown_seconds = 3.0
+    enabled = true
+    shortcut = "4"
+    variant = "default"
+
+    [[shell.session.actions]]
+    action = "shutdown"
+    countdown_seconds = 3.0
+    enabled = true
+    shortcut = "5"
+    variant = "destructive"
+
+    [shell.shadow]
+    alpha = 0.0
+
+[system.monitor]
+cpu_poll_seconds = 4
+disk_poll_seconds = 30
+enabled = false
+gpu_poll_seconds = 4
+memory_poll_seconds = 4
+network_poll_seconds = 4
+
+[theme]
+builtin = "Noctalia"
+mode = "dark"
+source = "builtin"
+wallpaper_scheme = "m3-tonal-spot"
+
+    [theme.templates]
+    builtin_ids = [ "alacritty", "btop", "gtk3", "gtk4", "hyprland", "kcolorscheme", "kitty", "qt" ]
+
+[wallpaper]
+fill_mode = "fit"
+transition = [ "diamond", "disc", "fade", "golden", "honeycomb", "melt", "pixel", "stripes", "vortex", "wipe", "zoom" ]
+transition_duration = 100
+transition_on_startup = true
+
+    [wallpaper.default]
+    path = "/usr/share/noctalia/assets/noctalia-wallpaper.png"
+
+    [wallpaper.last]
+    path = "/usr/share/noctalia/assets/noctalia-wallpaper.png"
+
+[weather]
+refresh_minutes = 5
+
+[widget.active_window]
+anchor = true
+max_length = 225
+scale = 0.95000000000000007
+title_scroll = "on_hover"
+
+[widget.brightness]
+scroll_repeat = "gesture"
+
+[widget.clock]
+anchor = true
+color = "secondary"
+format = "{:%H:%M %A %m/%d/%y}"
+
+[widget.launcher]
+capsule = true
+capsule_padding = 5
+capsule_radius = "auto"
+color = "secondary"
+custom_image = "/usr/share/icons/cachyos.svg"
+custom_image_colorize = true
+enabled = false
+scale = 1.3
+
+[widget.media]
+hide_when_no_media = true
+title_scroll = "on_hover"
+
+[widget.network]
+color = "secondary"
+
+[widget.notifications]
+color = "secondary"
+
+[widget.session]
+color = "error"
+
+[widget.spacer_1]
+length = 9
+type = "spacer"
+
+[widget.sysmon_2]
+glyph = "gpu-usage"
+show_value = false
+stat = "gpu_temp"
+type = "sysmon"
+
+[widget.sysmon_3]
+glyph = "cpu-2"
+stat = "ram_used"
+type = "sysmon"
+
+[widget.temp]
+show_value = true
+
+[widget.tray]
+capsule = true
+capsule_fill = "on_secondary"
+capsule_opacity = 0.0
+drawer = true
+hide_passive = false
+match_adjacent_spacing = true
+scale = 0.90000000000000002
+
+[widget.volume]
+color = "secondary"
+
+[widget.workspaces]
+active_pill_size = 2.5
+anchor = true
+capsule = true
+capsule_fill = "on_primary"
+hide_when_empty = true
+inactive_pill_size = 1.0
+pill_scale = 0.80000000000000004
+show_labels = false
+show_tooltip = false

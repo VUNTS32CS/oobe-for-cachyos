@@ -171,9 +171,10 @@ QUESTIONS=(
     "Modify ZRAM?"
     "Hard-blacklist unnecessary kernel modules from starting?"
     "Select Flatpak packages to install:"
+    "Import Hyprland & Noctalia dotfiles from GitHub?"
 )
 TOTAL_QUESTIONS=${#QUESTIONS[@]}
-COMPLETED=(0 0 0 0 0)
+COMPLETED=(0 0 0 0 0 0)
 
 FLATPAK_NAMES=("Sober")
 FLATPAK_REFS=("app/org.vinegarhq.Sober/x86_64/stable")
@@ -487,6 +488,56 @@ EOF
                 out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped kernel module blacklisting.")"
             fi
             ;;
+        5)
+            # Question 6: Import Hyprland & Noctalia dotfiles from GitHub?
+            if [[ "$user_choice" == "Y" ]]; then
+                platform_dir="laptop"
+                if [[ "$PLATFORM" == "Desktop" ]]; then
+                    platform_dir="desktop"
+                fi
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Pulling Hyprland & Noctalia dotfiles (${platform_dir}) from GitHub...")"
+
+                tmp_dotfiles="$(mktemp -d /tmp/oobe_dotfiles.XXXXXX)"
+                pull_ok=0
+                if command -v git >/dev/null 2>&1; then
+                    if git clone --depth 1 https://github.com/vunts32cs/oobe-for-cachyos.git "$tmp_dotfiles/repo" 2>&1 | tee -a "$SCREEN_LOG"; then
+                        pull_ok=1
+                    fi
+                elif command -v curl >/dev/null 2>&1; then
+                    mkdir -p "$tmp_dotfiles/repo"
+                    if curl -fsSL https://github.com/vunts32cs/oobe-for-cachyos/archive/refs/heads/main.tar.gz | tar -xz -C "$tmp_dotfiles/repo" --strip-components=1 2>&1 | tee -a "$SCREEN_LOG"; then
+                        pull_ok=1
+                    fi
+                else
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 196 "Error: Neither git nor curl is available to pull dotfiles from GitHub.")"
+                fi
+
+                if (( pull_ok == 1 )); then
+                    src_assets="$tmp_dotfiles/repo/assets/$platform_dir"
+                    if [[ -d "$src_assets/hypr" ]]; then
+                        mkdir -p "$HOME/.config"
+                        rm -rf "$HOME/.config/hypr"
+                        cp -r "$src_assets/hypr" "$HOME/.config/hypr"
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Imported hypr folder to $HOME/.config/hypr.")"
+                    else
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "assets/${platform_dir}/hypr not found in repository. Skipping hypr import.")"
+                    fi
+
+                    if [[ -f "$src_assets/noctalia-config.toml" ]]; then
+                        mkdir -p "$HOME/.config/noctalia"
+                        cp -f "$src_assets/noctalia-config.toml" "$HOME/.config/noctalia/noctalia-config.toml"
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Imported noctalia-config.toml to $HOME/.config/noctalia/noctalia-config.toml.")"
+                    else
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "assets/${platform_dir}/noctalia-config.toml not found in repository. Skipping noctalia import.")"
+                    fi
+                elif command -v git >/dev/null 2>&1 || command -v curl >/dev/null 2>&1; then
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 196 "Failed to pull dotfiles from GitHub.")"
+                fi
+                rm -rf "$tmp_dotfiles"
+            else
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped importing Hyprland & Noctalia dotfiles.")"
+            fi
+            ;;
     esac
 }
 
@@ -502,6 +553,8 @@ get_countdown_prefix() {
         2:N) echo "Will skip ZRAM modification" ;;
         3:Y) echo "Will hard-blacklist unnecessary kernel modules" ;;
         3:N) echo "Will skip kernel module blacklisting" ;;
+        5:Y) echo "Will import Hyprland & Noctalia dotfiles from GitHub" ;;
+        5:N) echo "Will skip importing Hyprland & Noctalia dotfiles" ;;
     esac
 }
 
