@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
+export LC_NUMERIC=C
 
 # Ensure gum is installed for modern TUI look
 if ! command -v gum >/dev/null 2>&1; then
@@ -82,28 +83,55 @@ detect_platform() {
     fi
 }
 
+# Compute a `read -t` timeout string (stored in the variable named by $1)
+# representing the wait until the next 1-second boundary of rem_us.
+set_next_tick_timeout() {
+    local -n _out_timeout="$1"
+    local rem_us="$2"
+    local sec="$3"
+    local wait_us=$(( rem_us - (sec - 1) * 1000000 ))
+    if (( wait_us < 1000 )); then
+        wait_us=1000
+    fi
+    printf -v _out_timeout "%d.%06d" $(( wait_us / 1000000 )) $(( wait_us % 1000000 ))
+}
+
 # Countdown before executing or skipping a process.
 # Returns 0 if the countdown finishes (or Enter is pressed),
 # Returns 1 if the user presses Q/q to cancel and change their opinion.
 countdown_action() {
     local action_prefix="$1"
-    local seconds=6
+    local end_us=$(( ${EPOCHREALTIME/./} + 6 * 1000000 ))
+    local last_sec=-1
     local key=""
+    local rest=""
+    local timeout_str=""
+
+    local indicator paren_text main_text=""
+    indicator="$(CLICOLOR_FORCE=1 gum style --foreground 214 --bold "[!]")"
+    paren_text="$(CLICOLOR_FORCE=1 gum style --foreground 243 "(Q to change opinion, Ctrl + C to exit or Enter to skip countdown)")"
 
     # Disable terminal line auto-wrap (DECAWM) and save cursor position so
     # shrinking the terminal or wrapping lines never causes new lines on refresh.
     printf "\033[?7l\033[s"
 
-    while (( seconds > 0 )); do
-        local indicator
-        local main_text
-        local paren_text
-        indicator="$(CLICOLOR_FORCE=1 gum style --foreground 214 --bold "[!]")"
-        main_text="$(CLICOLOR_FORCE=1 gum style --foreground 15 "${action_prefix} in [${seconds}] seconds")"
-        paren_text="$(CLICOLOR_FORCE=1 gum style --foreground 243 "(Q to change opinion, Ctrl + C to exit or Enter to skip countdown)")"
-        printf "\033[u\r\033[J%s %s %s" "$indicator" "$main_text" "$paren_text"
+    while true; do
+        local now_us=${EPOCHREALTIME/./}
+        local rem_us=$(( end_us - now_us ))
+        if (( rem_us <= 0 )); then
+            break
+        fi
 
-        if IFS= read -r -s -n 1 -t 1 key; then
+        local seconds=$(( (rem_us + 999999) / 1000000 ))
+        if (( seconds != last_sec )); then
+            main_text="$(CLICOLOR_FORCE=1 gum style --foreground 15 "${action_prefix} in [${seconds}] seconds")"
+            printf "\033[u\r\033[J%s %s %s" "$indicator" "$main_text" "$paren_text"
+            last_sec=$seconds
+        fi
+
+        set_next_tick_timeout timeout_str "$rem_us" "$seconds"
+
+        if IFS= read -r -s -n 1 -t "$timeout_str" key; then
             if [[ -z "$key" ]]; then
                 # User pressed Enter: skip remaining countdown
                 printf "\033[?7h\n"
@@ -115,9 +143,10 @@ countdown_action() {
                 printf "%s %s %s\n" "$indicator" "$main_text" "$paren_text" >> "$SCREEN_LOG"
                 out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "Action cancelled. Returning to question...")"
                 return 1
+            elif [[ "$key" == $'\x1b' ]]; then
+                IFS= read -r -s -n 2 -t 0.01 rest || true
             fi
         fi
-        (( seconds-- ))
     done
     printf "\033[?7h\n"
     printf "%s %s %s\n" "$indicator" "$main_text" "$paren_text" >> "$SCREEN_LOG"
@@ -141,9 +170,33 @@ QUESTIONS=(
     "Stop Bluetooth from starting at startup?"
     "Modify ZRAM?"
     "Hard-blacklist unnecessary kernel modules from starting?"
+    "Select Flatpak packages to install:"
 )
 TOTAL_QUESTIONS=${#QUESTIONS[@]}
-COMPLETED=(0 0 0 0)
+COMPLETED=(0 0 0 0 0)
+
+FLATPAK_NAMES=("Sober")
+FLATPAK_REFS=("app/org.vinegarhq.Sober/x86_64/stable")
+TOTAL_FLATPAKS=${#FLATPAK_NAMES[@]}
+FLATPAK_STATUS=(0) # 0 = Unanswered, 1 = Installed, 2 = Skipped
+
+update_flatpak_question_status() {
+    local any_installed=0
+    local all_answered=1
+    local i
+    for (( i = 0; i < TOTAL_FLATPAKS; i++ )); do
+        if (( FLATPAK_STATUS[i] == 1 )); then
+            any_installed=1
+        elif (( FLATPAK_STATUS[i] == 0 )); then
+            all_answered=0
+        fi
+    done
+    if (( any_installed == 1 )); then
+        COMPLETED[4]=1
+    elif (( all_answered == 1 )); then
+        COMPLETED[4]=2
+    fi
+}
 
 # Helper to format a question prompt with the orange [n/total] prefix
 format_question_prompt() {
@@ -319,31 +372,32 @@ execute_question() {
         0)
             # Question 1: Remove unneeded linux-firmware packages?
             if [[ "$user_choice" == "Y" ]]; then
-                if [[ "$PLATFORM" == "Desktop" ]]; then
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 196 --bold "Desktop platform detected. Stopping and exiting the script.")"
-                    exit 0
-                elif [[ "$PLATFORM" == "Laptop" ]]; then
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Searching for installed linux-firmware packages...")"
-                    mapfile -t installed_fw < <(pacman -Qq | grep -E '^linux-firmware' || true)
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Searching for installed linux-firmware packages...")"
+                mapfile -t installed_fw < <(pacman -Qq | grep -E '^linux-firmware' || true)
 
-                    pkgs_to_remove=()
-                    for pkg in "${installed_fw[@]}"; do
+                pkgs_to_remove=()
+                for pkg in "${installed_fw[@]}"; do
+                    if [[ "$PLATFORM" == "Desktop" ]]; then
                         case "$pkg" in
-                            linux-firmware-other|linux-firmware-realtek|linux-firmware-intel)
-                                # Keep these packages
-                                ;;
-                            *)
-                                pkgs_to_remove+=("$pkg")
+                            linux-firmware-amd|linux-firmware-other|linux-firmware-realtek|linux-firmware-nvidia)
+                                continue
                                 ;;
                         esac
-                    done
-
-                    if (( ${#pkgs_to_remove[@]} > 0 )); then
-                        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "Removing packages: ${pkgs_to_remove[*]}")"
-                        sudo pacman -Rdd --noconfirm "${pkgs_to_remove[@]}" 2>&1 | tee -a "$SCREEN_LOG"
-                    else
-                        out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "No unneeded linux-firmware packages found to remove.")"
+                    elif [[ "$PLATFORM" == "Laptop" ]]; then
+                        case "$pkg" in
+                            linux-firmware-other|linux-firmware-realtek|linux-firmware-intel)
+                                continue
+                                ;;
+                        esac
                     fi
+                    pkgs_to_remove+=("$pkg")
+                done
+
+                if (( ${#pkgs_to_remove[@]} > 0 )); then
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "Removing packages: ${pkgs_to_remove[*]}")"
+                    sudo pacman -Rnsdd --noconfirm "${pkgs_to_remove[@]}" 2>&1 | tee -a "$SCREEN_LOG"
+                else
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "No unneeded linux-firmware packages found to remove.")"
                 fi
             else
                 out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped linux-firmware cleanup.")"
@@ -375,11 +429,15 @@ execute_question() {
             # Question 3: Modify ZRAM?
             if [[ "$user_choice" == "Y" ]]; then
                 zram_conf="/etc/systemd/zram-generator.conf"
+                zram_algo="lz4"
+                if [[ "$PLATFORM" == "Desktop" ]]; then
+                    zram_algo="zstd"
+                fi
                 sudo mkdir -p /etc/systemd
-                sudo tee "$zram_conf" >/dev/null <<'EOF'
+                sudo tee "$zram_conf" >/dev/null <<EOF
 [zram0]
 zram-size = ram/4
-compression-algorithm = lz4
+compression-algorithm = ${zram_algo}
 fs-type = swap
 swap-priority = 100
 EOF
@@ -475,9 +533,12 @@ first_uncompleted_question() {
 # 130 = Ctrl + C
 completion_prompt() {
     local selected=0
-    local seconds=10
+    local end_us=$(( ${EPOCHREALTIME/./} + 10 * 1000000 ))
+    local last_sec=-1
+    local last_selected=-1
     local key=""
     local rest=""
+    local timeout_str=""
 
     local btn_ok_sel btn_ok_unsel btn_back_sel btn_back_unsel
     btn_ok_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 230 "   Okay   ")"
@@ -490,20 +551,33 @@ completion_prompt() {
 
     printf "\n\n\n\n\n\033[5A\033[s\033[?7l\033[?25l"
 
-    while (( seconds > 0 )); do
-        local prompt_styled
-        prompt_styled="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Script complete. Automatically exiting in ${seconds}s.")"
-
-        local buttons_line
-        if (( selected == 0 )); then
-            buttons_line=" ${btn_ok_sel}  ${btn_back_unsel}"
-        else
-            buttons_line=" ${btn_ok_unsel}  ${btn_back_sel}"
+    while true; do
+        local now_us=${EPOCHREALTIME/./}
+        local rem_us=$(( end_us - now_us ))
+        if (( rem_us <= 0 )); then
+            break
         fi
 
-        printf "\033[u\r\033[J %s\n\n%s\n\n%s" "$prompt_styled" "$buttons_line" "$help_line"
+        local seconds=$(( (rem_us + 999999) / 1000000 ))
+        if (( seconds != last_sec || selected != last_selected )); then
+            local prompt_styled
+            prompt_styled="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Script complete. Automatically exiting in ${seconds}s.")"
 
-        if IFS= read -r -s -n 1 -t 1 key; then
+            local buttons_line
+            if (( selected == 0 )); then
+                buttons_line=" ${btn_ok_sel}  ${btn_back_unsel}"
+            else
+                buttons_line=" ${btn_ok_unsel}  ${btn_back_sel}"
+            fi
+
+            printf "\033[u\r\033[J %s\n\n%s\n\n%s" "$prompt_styled" "$buttons_line" "$help_line"
+            last_sec=$seconds
+            last_selected=$selected
+        fi
+
+        set_next_tick_timeout timeout_str "$rem_us" "$seconds"
+
+        if IFS= read -r -s -n 1 -t "$timeout_str" key; then
             if [[ -z "$key" ]]; then
                 printf "\033[u\r\033[J\033[?7h\033[?25h"
                 return "$selected"
@@ -513,20 +587,194 @@ completion_prompt() {
             elif [[ "$key" == $'\t' || "$key" == "h" || "$key" == "H" || "$key" == "l" || "$key" == "L" ]]; then
                 selected=$(( 1 - selected ))
             elif [[ "$key" == $'\x1b' ]]; then
-                IFS= read -r -s -n 2 -t 0.05 rest || true
+                IFS= read -r -s -n 2 -t 0.01 rest || true
                 case "$rest" in
                     "[C"|"[D"|"[Z")
                         selected=$(( 1 - selected ))
                         ;;
                 esac
             fi
-        else
-            (( seconds-- ))
         fi
     done
 
     printf "\033[u\r\033[J\033[?7h\033[?25h"
     return 0
+}
+
+# Interactive Gum-styled Yes/No prompt (no Tab switcher) for sub-prompts:
+# Return codes:
+#   0 = Yes
+#   1 = No
+# 130 = Ctrl + C (interrupted by user)
+gum_confirm_simple() {
+    local prompt_text="$1"
+    local selected=0 # 0 = Yes (default), 1 = No
+    local key=""
+    local rest=""
+
+    local prompt_styled
+    prompt_styled="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "$prompt_text")"
+
+    local btn_yes_sel btn_yes_unsel btn_no_sel btn_no_unsel
+    btn_yes_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 230 "   Yes   ")"
+    btn_yes_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 254 "   Yes   ")"
+    btn_no_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 230 "   No   ")"
+    btn_no_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 254 "   No   ")"
+
+    local help_line
+    help_line=$'\033[38;5;241m←→\033[m \033[38;5;239mtoggle\033[38;5;237m • \033[38;5;241menter\033[m \033[38;5;239msubmit\033[38;5;237m • \033[38;5;241my\033[m \033[38;5;239mYes\033[38;5;237m • \033[38;5;241mn\033[m \033[38;5;239mNo\033[m'
+
+    printf "\n\n\n\n\n\033[5A\033[s\033[?25l"
+
+    while true; do
+        local buttons_line
+        if (( selected == 0 )); then
+            buttons_line=" ${btn_yes_sel}  ${btn_no_unsel}"
+        else
+            buttons_line=" ${btn_yes_unsel}  ${btn_no_sel}"
+        fi
+
+        printf "\033[u\r\033[J %s\n\n%s\n\n%s" "$prompt_styled" "$buttons_line" "$help_line"
+
+        IFS= read -r -s -n 1 key || {
+            printf "\033[u\r\033[J\033[?25h"
+            return 130
+        }
+
+        if [[ -z "$key" ]]; then
+            printf "\033[u\r\033[J\033[?25h"
+            return "$selected"
+        elif [[ "$key" == "y" || "$key" == "Y" ]]; then
+            printf "\033[u\r\033[J\033[?25h"
+            return 0
+        elif [[ "$key" == "n" || "$key" == "N" ]]; then
+            printf "\033[u\r\033[J\033[?25h"
+            return 1
+        elif [[ "$key" == $'\x03' ]]; then
+            printf "\033[u\r\033[J\033[?25h"
+            return 130
+        elif [[ "$key" == $'\t' || "$key" == "h" || "$key" == "H" || "$key" == "l" || "$key" == "L" ]]; then
+            selected=$(( 1 - selected ))
+        elif [[ "$key" == $'\x1b' ]]; then
+            IFS= read -r -s -n 2 -t 0.05 rest || true
+            case "$rest" in
+                "[C"|"[D"|"[Z")
+                    selected=$(( 1 - selected ))
+                    ;;
+            esac
+        fi
+    done
+}
+
+# Interactive Flatpak packages selector for Question 5:
+# Return codes:
+#   0 = Finished Flatpak packages menu (q/Esc)
+#   2 = TAB pressed (open question switcher)
+# 130 = Ctrl + C (interrupted by user)
+flatpak_packages_menu() {
+    local cursor=0
+    local key=""
+    local rest=""
+    local menu_height=$(( TOTAL_FLATPAKS + 4 ))
+
+    local header_line
+    header_line="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "$(format_question_prompt 5 "${QUESTIONS[4]}")")"
+    local help_line
+    help_line=$'\033[38;5;241m↓↑\033[m \033[38;5;239mnavigate\033[38;5;237m • \033[38;5;241menter\033[m \033[38;5;239mselect\033[38;5;237m • \033[38;5;241mq/esc\033[m \033[38;5;239mfinish\033[38;5;237m • \033[38;5;241mtab\033[m \033[38;5;239mswitch between questions\033[m'
+
+    while true; do
+        for (( i = 0; i < menu_height; i++ )); do
+            printf "\n"
+        done
+        printf "\033[%dA\033[s\033[?25l" "$menu_height"
+
+        local chosen_action=""
+        while true; do
+            printf "\033[u\r\033[J%s\n" "$header_line"
+            for (( i = 0; i < TOTAL_FLATPAKS; i++ )); do
+                local status_suffix=""
+                if (( FLATPAK_STATUS[i] == 1 )); then
+                    status_suffix=" (Installed)"
+                elif (( FLATPAK_STATUS[i] == 2 )); then
+                    status_suffix=" (Skipped)"
+                fi
+                local item_label="${FLATPAK_NAMES[i]} (${FLATPAK_REFS[i]})${status_suffix}"
+                if (( i == cursor )); then
+                    printf "%s\n" "$(CLICOLOR_FORCE=1 gum style --foreground 212 "> ${item_label}")"
+                else
+                    printf "  %s\n" "$item_label"
+                fi
+            done
+            printf "\n%s" "$help_line"
+
+            IFS= read -r -s -n 1 key || {
+                printf "\033[u\r\033[J\033[?25h"
+                return 130
+            }
+
+            if [[ -z "$key" ]]; then
+                printf "\033[u\r\033[J\033[?25h"
+                chosen_action="select"
+                break
+            elif [[ "$key" == $'\t' ]]; then
+                printf "\033[u\r\033[J\033[?25h"
+                return 2
+            elif [[ "$key" == "q" || "$key" == "Q" ]]; then
+                printf "\033[u\r\033[J\033[?25h"
+                return 0
+            elif [[ "$key" == $'\x03' ]]; then
+                printf "\033[u\r\033[J\033[?25h"
+                return 130
+            elif [[ "$key" == "k" || "$key" == "K" ]]; then
+                cursor=$(( (cursor - 1 + TOTAL_FLATPAKS) % TOTAL_FLATPAKS ))
+            elif [[ "$key" == "j" || "$key" == "J" ]]; then
+                cursor=$(( (cursor + 1) % TOTAL_FLATPAKS ))
+            elif [[ "$key" == $'\x1b' ]]; then
+                IFS= read -r -s -n 2 -t 0.05 rest || true
+                case "$rest" in
+                    "[A")
+                        cursor=$(( (cursor - 1 + TOTAL_FLATPAKS) % TOTAL_FLATPAKS ))
+                        ;;
+                    "[B")
+                        cursor=$(( (cursor + 1) % TOTAL_FLATPAKS ))
+                        ;;
+                    "[Z")
+                        printf "\033[u\r\033[J\033[?25h"
+                        return 2
+                        ;;
+                    "")
+                        printf "\033[u\r\033[J\033[?25h"
+                        return 0
+                        ;;
+                esac
+            fi
+        done
+
+        if [[ "$chosen_action" == "select" ]]; then
+            local prog_name="${FLATPAK_NAMES[cursor]}"
+            local prog_ref="${FLATPAK_REFS[cursor]}"
+            while true; do
+                gum_confirm_simple "Install ${prog_name}?"
+                local fp_rc=$?
+                if (( fp_rc == 130 )); then
+                    return 130
+                elif (( fp_rc == 1 )); then
+                    FLATPAK_STATUS[cursor]=2
+                    update_flatpak_question_status
+                    break
+                else
+                    if ! countdown_action "Will install ${prog_name}"; then
+                        continue
+                    fi
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Installing ${prog_name} (${prog_ref})...")"
+                    flatpak install -y flathub "$prog_ref" 2>&1 | tee -a "$SCREEN_LOG"
+                    FLATPAK_STATUS[cursor]=1
+                    update_flatpak_question_status
+                    break
+                fi
+            done
+        fi
+    done
 }
 
 current_q=0
@@ -574,49 +822,78 @@ while true; do
         continue
     fi
 
-    q_num=$(( current_q + 1 ))
-    prompt_str="$(format_question_prompt "$q_num" "${QUESTIONS[current_q]}")"
-
-    gum_confirm_with_tab "$prompt_str"
-    confirm_rc=$?
-
-    if (( confirm_rc == 130 )); then
-        restore_screen
-        CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
-        exit 130
-    elif (( confirm_rc == 2 )); then
-        SELECTED_QUESTION_IDX="$current_q"
-        select_question_menu "$current_q" "Select a question:"
-        menu_rc=$?
-        if (( menu_rc == 130 )); then
+    if (( current_q == 4 )); then
+        flatpak_packages_menu
+        fp_menu_rc=$?
+        if (( fp_menu_rc == 130 )); then
             restore_screen
             CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
             exit 130
-        elif (( menu_rc == 2 )) && all_questions_completed; then
-            # Backed out of questions list while all questions are complete: show completion message
+        elif (( fp_menu_rc == 2 )); then
+            SELECTED_QUESTION_IDX="$current_q"
+            select_question_menu "$current_q" "Select a question:"
+            menu_rc=$?
+            if (( menu_rc == 130 )); then
+                restore_screen
+                CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
+                exit 130
+            elif (( menu_rc == 2 )) && all_questions_completed; then
+                continue
+            fi
+            current_q="$SELECTED_QUESTION_IDX"
+            if all_questions_completed; then
+                force_ask=1
+            fi
             continue
         fi
-        current_q="$SELECTED_QUESTION_IDX"
-        if all_questions_completed; then
-            force_ask=1
+        if (( COMPLETED[4] == 0 )); then
+            COMPLETED[4]=2
         fi
-        continue
-    elif (( confirm_rc == 0 )); then
-        user_choice="Y"
     else
-        user_choice="N"
-    fi
+        q_num=$(( current_q + 1 ))
+        prompt_str="$(format_question_prompt "$q_num" "${QUESTIONS[current_q]}")"
 
-    if [[ "$user_choice" == "Y" ]]; then
-        countdown_prefix="$(get_countdown_prefix "$current_q" "$user_choice")"
-        if ! countdown_action "$countdown_prefix"; then
+        gum_confirm_with_tab "$prompt_str"
+        confirm_rc=$?
+
+        if (( confirm_rc == 130 )); then
+            restore_screen
+            CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
+            exit 130
+        elif (( confirm_rc == 2 )); then
+            SELECTED_QUESTION_IDX="$current_q"
+            select_question_menu "$current_q" "Select a question:"
+            menu_rc=$?
+            if (( menu_rc == 130 )); then
+                restore_screen
+                CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
+                exit 130
+            elif (( menu_rc == 2 )) && all_questions_completed; then
+                # Backed out of questions list while all questions are complete: show completion message
+                continue
+            fi
+            current_q="$SELECTED_QUESTION_IDX"
+            if all_questions_completed; then
+                force_ask=1
+            fi
             continue
+        elif (( confirm_rc == 0 )); then
+            user_choice="Y"
+        else
+            user_choice="N"
         fi
-        execute_question "$current_q" "$user_choice"
-        COMPLETED[current_q]=1
-    else
-        execute_question "$current_q" "$user_choice"
-        COMPLETED[current_q]=2
+
+        if [[ "$user_choice" == "Y" ]]; then
+            countdown_prefix="$(get_countdown_prefix "$current_q" "$user_choice")"
+            if ! countdown_action "$countdown_prefix"; then
+                continue
+            fi
+            execute_question "$current_q" "$user_choice"
+            COMPLETED[current_q]=1
+        else
+            execute_question "$current_q" "$user_choice"
+            COMPLETED[current_q]=2
+        fi
     fi
 
     (( current_q++ ))
