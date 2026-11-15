@@ -38,7 +38,7 @@ restore_screen() {
 
 handle_sigint() {
     restore_screen
-    CLICOLOR_FORCE=1 gum style --foreground 214 "Exited."
+    CLICOLOR_FORCE=1 gum style --foreground 196 "Exited."
     exit 130
 }
 
@@ -166,12 +166,12 @@ CLICOLOR_FORCE=1 gum style \
     "Detected Platform: ${PLATFORM}" | tee -a "$SCREEN_LOG"
 
 QUESTIONS=(
-    "Remove unneeded linux-firmware packages?"
+    "Make package changes?"
     "Stop Bluetooth from starting at startup?"
     "Modify ZRAM?"
-    "Hard-blacklist unnecessary kernel modules from starting?"
+    "Hard-blacklist unnecessary kernel modules?"
     "Select Flatpak packages to install:"
-    "Import Hyprland & Noctalia dotfiles from GitHub?"
+    "Import configurations?"
 )
 TOTAL_QUESTIONS=${#QUESTIONS[@]}
 COMPLETED=(0 0 0 0 0 0)
@@ -318,7 +318,7 @@ select_question_menu() {
             fi
             local item_label="[${q_num}/${TOTAL_QUESTIONS}] ${QUESTIONS[i]}${status_suffix}"
             if (( i == cursor )); then
-                printf "%s\n" "$(CLICOLOR_FORCE=1 gum style --foreground 212 "> ${item_label}")"
+                printf "%s\n" "$(CLICOLOR_FORCE=1 gum style --foreground 214 "> ${item_label}")"
             else
                 printf "  %s\n" "$item_label"
             fi
@@ -371,8 +371,18 @@ execute_question() {
 
     case "$q_idx" in
         0)
-            # Question 1: Remove unneeded linux-firmware packages?
+            # Question 1: Make package changes?
             if [[ "$user_choice" == "Y" ]]; then
+                local total_steps=1
+                if [[ "$PLATFORM" == "Laptop" ]]; then
+                    total_steps=3
+                fi
+
+                local step1_prefix step1_title
+                step1_prefix="$(CLICOLOR_FORCE=1 gum style --foreground 214 --bold "[Step 1/${total_steps}]")"
+                step1_title="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Removing unneeded linux-firmware packages...")"
+                out "${step1_prefix} ${step1_title}"
+
                 out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Searching for installed linux-firmware packages...")"
                 mapfile -t installed_fw < <(pacman -Qq | grep -E '^linux-firmware' || true)
 
@@ -400,8 +410,36 @@ execute_question() {
                 else
                     out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "No unneeded linux-firmware packages found to remove.")"
                 fi
+
+                if [[ "$PLATFORM" == "Laptop" ]]; then
+                    local step2_prefix step2_title
+                    step2_prefix="$(CLICOLOR_FORCE=1 gum style --foreground 214 --bold "[Step 2/${total_steps}]")"
+                    step2_title="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Uninstalling kitty and installing foot...")"
+                    out "${step2_prefix} ${step2_title}"
+
+                    if pacman -Qq kitty >/dev/null 2>&1; then
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "Removing package: kitty")"
+                        sudo pacman -Rndd --noconfirm kitty 2>&1 | tee -a "$SCREEN_LOG"
+                    else
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "kitty is not installed. Skipping removal.")"
+                    fi
+
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Installing package: foot")"
+                    sudo pacman -S --needed --noconfirm foot 2>&1 | tee -a "$SCREEN_LOG"
+
+                    local step3_prefix step3_title
+                    step3_prefix="$(CLICOLOR_FORCE=1 gum style --foreground 214 --bold "[Step 3/${total_steps}]")"
+                    step3_title="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Installing and enabling TLP...")"
+                    out "${step3_prefix} ${step3_title}"
+
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Installing packages: tlp tlp-rdw tlp-pd")"
+                    sudo pacman -S --needed --noconfirm tlp tlp-rdw tlp-pd 2>&1 | tee -a "$SCREEN_LOG"
+
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Enabling TLP and TLP-PD services...")"
+                    sudo systemctl enable --now tlp tlp-pd 2>&1 | tee -a "$SCREEN_LOG"
+                fi
             else
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped linux-firmware cleanup.")"
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped package changes.")"
             fi
             ;;
         1)
@@ -489,13 +527,13 @@ EOF
             fi
             ;;
         5)
-            # Question 6: Import Hyprland & Noctalia dotfiles from GitHub?
+            # Question 6: Import configurations?
             if [[ "$user_choice" == "Y" ]]; then
                 platform_dir="laptop"
                 if [[ "$PLATFORM" == "Desktop" ]]; then
                     platform_dir="desktop"
                 fi
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Pulling Hyprland & Noctalia dotfiles (${platform_dir}) from GitHub...")"
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Pulling configurations (${platform_dir}) from GitHub...")"
 
                 tmp_dotfiles="$(mktemp -d /tmp/oobe_dotfiles.XXXXXX)"
                 pull_ok=0
@@ -530,12 +568,32 @@ EOF
                     else
                         out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "assets/${platform_dir}/noctalia-config.toml not found in repository. Skipping noctalia import.")"
                     fi
+
+                    if [[ -f "$src_assets/foot.ini" ]]; then
+                        mkdir -p "$HOME/.config/foot"
+                        cp -f "$src_assets/foot.ini" "$HOME/.config/foot/foot.ini"
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Imported foot.ini to $HOME/.config/foot/foot.ini.")"
+                    elif [[ "$PLATFORM" == "Laptop" ]]; then
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "assets/${platform_dir}/foot.ini not found in repository. Skipping foot import.")"
+                    fi
                 elif command -v git >/dev/null 2>&1 || command -v curl >/dev/null 2>&1; then
                     out "$(CLICOLOR_FORCE=1 gum style --foreground 196 "Failed to pull dotfiles from GitHub.")"
                 fi
                 rm -rf "$tmp_dotfiles"
+
+                mkdir -p "$HOME/.config/autostart"
+                cat <<'EOF' > "$HOME/.config/autostart/arch-update-tray.desktop"
+[Desktop Entry]
+Hidden=true
+EOF
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Updated $HOME/.config/autostart/arch-update-tray.desktop.")"
+
+                if command -v hyprctl >/dev/null 2>&1; then
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Reloading Hyprland configuration...")"
+                    hyprctl reload 2>&1 | tee -a "$SCREEN_LOG"
+                fi
             else
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped importing Hyprland & Noctalia dotfiles.")"
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped importing configurations.")"
             fi
             ;;
     esac
@@ -545,16 +603,16 @@ get_countdown_prefix() {
     local q_idx="$1"
     local choice="$2"
     case "$q_idx:$choice" in
-        0:Y) echo "Will run linux-firmware cleanup" ;;
-        0:N) echo "Will skip linux-firmware cleanup" ;;
+        0:Y) echo "Will make package changes" ;;
+        0:N) echo "Will skip package changes" ;;
         1:Y) echo "Will disable Bluetooth AutoEnable" ;;
         1:N) echo "Will skip disabling Bluetooth AutoEnable" ;;
         2:Y) echo "Will modify ZRAM configuration" ;;
         2:N) echo "Will skip ZRAM modification" ;;
         3:Y) echo "Will hard-blacklist unnecessary kernel modules" ;;
         3:N) echo "Will skip kernel module blacklisting" ;;
-        5:Y) echo "Will import Hyprland & Noctalia dotfiles from GitHub" ;;
-        5:N) echo "Will skip importing Hyprland & Noctalia dotfiles" ;;
+        5:Y) echo "Will import configurations" ;;
+        5:N) echo "Will skip importing configurations" ;;
     esac
 }
 
@@ -566,6 +624,16 @@ all_questions_completed() {
         fi
     done
     return 0
+}
+
+any_question_applied() {
+    local i
+    for (( i = 0; i < TOTAL_QUESTIONS; i++ )); do
+        if (( COMPLETED[i] == 1 )); then
+            return 0
+        fi
+    done
+    return 1
 }
 
 first_uncompleted_question() {
@@ -602,6 +670,11 @@ completion_prompt() {
     local help_line
     help_line=$'\033[38;5;241m←→\033[m \033[38;5;239mtoggle\033[38;5;237m • \033[38;5;241menter\033[m \033[38;5;239msubmit\033[m'
 
+    local reboot_suffix=""
+    if any_question_applied; then
+        reboot_suffix=" $(CLICOLOR_FORCE=1 gum style --foreground 196 "Reboot required.")"
+    fi
+
     printf "\n\n\n\n\n\033[5A\033[s\033[?7l\033[?25l"
 
     while true; do
@@ -614,7 +687,7 @@ completion_prompt() {
         local seconds=$(( (rem_us + 999999) / 1000000 ))
         if (( seconds != last_sec || selected != last_selected )); then
             local prompt_styled
-            prompt_styled="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Script complete. Automatically exiting in ${seconds}s.")"
+            prompt_styled="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Script complete. Automatically exiting in ${seconds}s.")${reboot_suffix}"
 
             local buttons_line
             if (( selected == 0 )); then
@@ -666,7 +739,7 @@ gum_confirm_simple() {
     local rest=""
 
     local prompt_styled
-    prompt_styled="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "$prompt_text")"
+    prompt_styled="$(CLICOLOR_FORCE=1 gum style --foreground 15 "$prompt_text")"
 
     local btn_yes_sel btn_yes_unsel btn_no_sel btn_no_unsel
     btn_yes_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 230 "   Yes   ")"
@@ -753,7 +826,7 @@ flatpak_packages_menu() {
                 fi
                 local item_label="${FLATPAK_NAMES[i]} (${FLATPAK_REFS[i]})${status_suffix}"
                 if (( i == cursor )); then
-                    printf "%s\n" "$(CLICOLOR_FORCE=1 gum style --foreground 212 "> ${item_label}")"
+                    printf "%s\n" "$(CLICOLOR_FORCE=1 gum style --foreground 214 "> ${item_label}")"
                 else
                     printf "  %s\n" "$item_label"
                 fi
@@ -837,17 +910,13 @@ while true; do
         completion_prompt
         comp_rc=$?
         if (( comp_rc == 130 )); then
-            restore_screen
-            CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
-            exit 130
+            handle_sigint
         elif (( comp_rc == 1 )); then
             SELECTED_QUESTION_IDX=0
             select_question_menu 0 "Select a question:"
             menu_rc=$?
             if (( menu_rc == 130 )); then
-                restore_screen
-                CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
-                exit 130
+                handle_sigint
             elif (( menu_rc == 2 )); then
                 # Cancelled out of questions list while all questions are complete: return to completion prompt
                 continue
@@ -855,7 +924,11 @@ while true; do
             current_q="$SELECTED_QUESTION_IDX"
             force_ask=1
         else
-            out "$(CLICOLOR_FORCE=1 gum style --foreground 82 --bold "Script successfully completed.")"
+            final_msg="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Script completed.")"
+            if any_question_applied; then
+                final_msg="${final_msg} $(CLICOLOR_FORCE=1 gum style --foreground 196 "Reboot required.")"
+            fi
+            out "$final_msg"
             break
         fi
     fi
@@ -867,9 +940,7 @@ while true; do
         select_question_menu "$first_uncomp" "Last question answered. Select a question:"
         menu_rc=$?
         if (( menu_rc == 130 )); then
-            restore_screen
-            CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
-            exit 130
+            handle_sigint
         fi
         current_q="$SELECTED_QUESTION_IDX"
         continue
@@ -879,17 +950,13 @@ while true; do
         flatpak_packages_menu
         fp_menu_rc=$?
         if (( fp_menu_rc == 130 )); then
-            restore_screen
-            CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
-            exit 130
+            handle_sigint
         elif (( fp_menu_rc == 2 )); then
             SELECTED_QUESTION_IDX="$current_q"
             select_question_menu "$current_q" "Select a question:"
             menu_rc=$?
             if (( menu_rc == 130 )); then
-                restore_screen
-                CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
-                exit 130
+                handle_sigint
             elif (( menu_rc == 2 )) && all_questions_completed; then
                 continue
             fi
@@ -910,17 +977,13 @@ while true; do
         confirm_rc=$?
 
         if (( confirm_rc == 130 )); then
-            restore_screen
-            CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
-            exit 130
+            handle_sigint
         elif (( confirm_rc == 2 )); then
             SELECTED_QUESTION_IDX="$current_q"
             select_question_menu "$current_q" "Select a question:"
             menu_rc=$?
             if (( menu_rc == 130 )); then
-                restore_screen
-                CLICOLOR_FORCE=1 gum style --foreground 196 "Script interrupted by user."
-                exit 130
+                handle_sigint
             elif (( menu_rc == 2 )) && all_questions_completed; then
                 # Backed out of questions list while all questions are complete: show completion message
                 continue
@@ -957,7 +1020,7 @@ while true; do
         else
             next_state="Skipped"
         fi
-        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "Next question (${next_q_num}/${TOTAL_QUESTIONS}) is answered (${next_state}). To another question...")"
+        out "$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Next question (${next_q_num}/${TOTAL_QUESTIONS}) is answered (${next_state}). To another question...")"
         current_q="$(first_uncompleted_question)"
     fi
 done
