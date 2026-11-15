@@ -615,7 +615,6 @@ while true; do
         execute_question "$current_q" "$user_choice"
         COMPLETED[current_q]=1
     else
-        out "$(CLICOLOR_FORCE=1 gum style --foreground 15 "Skipping...")"
         execute_question "$current_q" "$user_choice"
         COMPLETED[current_q]=2
     fi
@@ -628,7 +627,7 @@ while true; do
         else
             next_state="Skipped"
         fi
-        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "Next question (${next_q_num}/${TOTAL_QUESTIONS}) is answered (${next_state}). To the next question...")"
+        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "Next question (${next_q_num}/${TOTAL_QUESTIONS}) is answered (${next_state}). To another question...")"
         current_q="$(first_uncompleted_question)"
     fi
 done
