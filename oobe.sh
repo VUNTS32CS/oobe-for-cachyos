@@ -24,6 +24,23 @@ out() {
     printf "%s\n" "$*" | tee -a "$SCREEN_LOG"
 }
 
+out_spacer() {
+    if [[ -s "${SCREEN_LOG:-}" && -n "$(tail -n 1 "$SCREEN_LOG" 2>/dev/null)" ]]; then
+        out ""
+    fi
+}
+
+collapse_if_prev_skipped() {
+    if [[ -s "${SCREEN_LOG:-}" && -z "$(tail -n 1 "$SCREEN_LOG" 2>/dev/null)" ]]; then
+        local prev_line
+        prev_line="$(tail -n 2 "$SCREEN_LOG" 2>/dev/null | head -n 1)"
+        if [[ "$prev_line" == *"Skipped "* ]]; then
+            printf "\033[1A\r\033[J"
+            sed -i '$d' "$SCREEN_LOG"
+        fi
+    fi
+}
+
 restore_screen() {
     printf "\033[?7h\033[?25h"
     if [[ "${OVERLAY_ACTIVE:-0}" -eq 1 ]]; then
@@ -101,7 +118,7 @@ set_next_tick_timeout() {
 # Returns 1 if the user presses Q/q to cancel and change their opinion.
 countdown_action() {
     local action_prefix="$1"
-    local end_us=$(( ${EPOCHREALTIME/./} + 6 * 1000000 ))
+    local end_us=$(( ${EPOCHREALTIME/./} + 5 * 1000000 ))
     local last_sec=-1
     local key=""
     local rest=""
@@ -224,13 +241,13 @@ gum_confirm_with_tab() {
     prompt_styled="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "$prompt_text")"
 
     local btn_yes_sel btn_yes_unsel btn_no_sel btn_no_unsel
-    btn_yes_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 230 "   Yes   ")"
-    btn_yes_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 254 "   Yes   ")"
-    btn_no_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 230 "   No   ")"
-    btn_no_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 254 "   No   ")"
+    btn_yes_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 15 "   Yes   ")"
+    btn_yes_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 243 "   Yes   ")"
+    btn_no_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 15 "   No   ")"
+    btn_no_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 243 "   No   ")"
 
     local help_line
-    help_line=$'\033[38;5;241m←→\033[m \033[38;5;239mtoggle\033[38;5;237m • \033[38;5;241menter\033[m \033[38;5;239msubmit\033[38;5;237m • \033[38;5;241my\033[m \033[38;5;239mYes\033[38;5;237m • \033[38;5;241mn\033[m \033[38;5;239mNo\033[38;5;237m • \033[38;5;241mtab\033[m \033[38;5;239mswitch between questions\033[m'
+    help_line=$'\033[38;5;15m←→\033[m \033[38;5;243mtoggle • \033[38;5;15menter\033[m \033[38;5;243msubmit • \033[38;5;15my\033[m \033[38;5;243mYes • \033[38;5;15mn\033[m \033[38;5;243mNo • \033[38;5;15mtab\033[m \033[38;5;243mswitch between questions\033[m'
 
     # Reserve 5 lines and save cursor position at the top of the widget
     printf "\n\n\n\n\n\033[5A\033[s\033[?25l"
@@ -304,7 +321,7 @@ select_question_menu() {
     local header_line
     header_line="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "$custom_header")"
     local help_line
-    help_line=$'\033[38;5;241m↓↑\033[m \033[38;5;239mnavigate\033[38;5;237m • \033[38;5;241menter\033[m \033[38;5;239msubmit\033[38;5;237m • \033[38;5;241mtab/esc\033[m \033[38;5;239mcancel\033[m'
+    help_line=$'\033[38;5;15m↓↑\033[m \033[38;5;243mnavigate • \033[38;5;15menter\033[m \033[38;5;243msubmit • \033[38;5;15mtab/esc\033[m \033[38;5;243mcancel\033[m'
 
     while true; do
         printf "\033[u\r\033[J%s\n" "$header_line"
@@ -373,17 +390,17 @@ execute_question() {
         0)
             # Question 1: Make package changes?
             if [[ "$user_choice" == "Y" ]]; then
-                local total_steps=1
+                local total_steps=2
                 if [[ "$PLATFORM" == "Laptop" ]]; then
-                    total_steps=3
+                    total_steps=4
                 fi
 
                 local step1_prefix step1_title
                 step1_prefix="$(CLICOLOR_FORCE=1 gum style --foreground 214 --bold "[Step 1/${total_steps}]")"
-                step1_title="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Removing unneeded linux-firmware packages...")"
+                step1_title="$(CLICOLOR_FORCE=1 gum style --foreground 15 "Removing unneeded linux-firmware packages...")"
                 out "${step1_prefix} ${step1_title}"
 
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Searching for installed linux-firmware packages...")"
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Searching for installed linux-firmware packages...")"
                 mapfile -t installed_fw < <(pacman -Qq | grep -E '^linux-firmware' || true)
 
                 pkgs_to_remove=()
@@ -405,41 +422,54 @@ execute_question() {
                 done
 
                 if (( ${#pkgs_to_remove[@]} > 0 )); then
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "Removing packages: ${pkgs_to_remove[*]}")"
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Removing packages: ${pkgs_to_remove[*]}")"
                     sudo pacman -Rndd --noconfirm "${pkgs_to_remove[@]}" 2>&1 | tee -a "$SCREEN_LOG"
                 else
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "No unneeded linux-firmware packages found to remove.")"
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 243 "No unneeded linux-firmware packages found to remove.")"
+                fi
+
+                local step2_prefix step2_title
+                step2_prefix="$(CLICOLOR_FORCE=1 gum style --foreground 214 --bold "[Step 2/${total_steps}]")"
+                step2_title="$(CLICOLOR_FORCE=1 gum style --foreground 15 "Uninstalling plasma-thunderbolt...")"
+                out "${step2_prefix} ${step2_title}"
+
+                if pacman -Qq plasma-thunderbolt >/dev/null 2>&1; then
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Removing package: plasma-thunderbolt")"
+                    sudo pacman -Rndd --noconfirm plasma-thunderbolt 2>&1 | tee -a "$SCREEN_LOG"
+                else
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 243 "plasma-thunderbolt is not installed. Skipping removal.")"
                 fi
 
                 if [[ "$PLATFORM" == "Laptop" ]]; then
-                    local step2_prefix step2_title
-                    step2_prefix="$(CLICOLOR_FORCE=1 gum style --foreground 214 --bold "[Step 2/${total_steps}]")"
-                    step2_title="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Uninstalling kitty and installing foot...")"
-                    out "${step2_prefix} ${step2_title}"
-
-                    if pacman -Qq kitty >/dev/null 2>&1; then
-                        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "Removing package: kitty")"
-                        sudo pacman -Rndd --noconfirm kitty 2>&1 | tee -a "$SCREEN_LOG"
-                    else
-                        out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "kitty is not installed. Skipping removal.")"
-                    fi
-
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Installing package: foot")"
-                    sudo pacman -S --needed --noconfirm foot 2>&1 | tee -a "$SCREEN_LOG"
-
                     local step3_prefix step3_title
                     step3_prefix="$(CLICOLOR_FORCE=1 gum style --foreground 214 --bold "[Step 3/${total_steps}]")"
-                    step3_title="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Installing and enabling TLP...")"
+                    step3_title="$(CLICOLOR_FORCE=1 gum style --foreground 15 "Uninstalling kitty and installing foot...")"
                     out "${step3_prefix} ${step3_title}"
 
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Installing packages: tlp tlp-rdw tlp-pd")"
+                    if pacman -Qq kitty >/dev/null 2>&1; then
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Removing package: kitty")"
+                        sudo pacman -Rndd --noconfirm kitty 2>&1 | tee -a "$SCREEN_LOG"
+                    else
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 243 "kitty is not installed. Skipping removal.")"
+                    fi
+
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Installing package: foot")"
+                    sudo pacman -S --needed --noconfirm foot 2>&1 | tee -a "$SCREEN_LOG"
+
+                    local step4_prefix step4_title
+                    step4_prefix="$(CLICOLOR_FORCE=1 gum style --foreground 214 --bold "[Step 4/${total_steps}]")"
+                    step4_title="$(CLICOLOR_FORCE=1 gum style --foreground 15 "Installing and enabling TLP...")"
+                    out "${step4_prefix} ${step4_title}"
+
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Installing packages: tlp tlp-rdw tlp-pd")"
                     sudo pacman -S --needed --noconfirm tlp tlp-rdw tlp-pd 2>&1 | tee -a "$SCREEN_LOG"
 
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Enabling TLP and TLP-PD services...")"
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Enabling TLP and TLP-PD services...")"
                     sudo systemctl enable --now tlp tlp-pd 2>&1 | tee -a "$SCREEN_LOG"
                 fi
             else
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped package changes.")"
+                collapse_if_prev_skipped
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 243 "Skipped package changes.")"
             fi
             ;;
         1)
@@ -456,12 +486,13 @@ execute_question() {
                             printf "\n[Policy]\nAutoEnable = false\n" | sudo tee -a "$bt_conf" >/dev/null
                         fi
                     fi
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Set AutoEnable = false in ${bt_conf}.")"
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Set AutoEnable = false in ${bt_conf}.")"
                 else
                     out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "${bt_conf} not found. Skipping.")"
                 fi
             else
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped disabling Bluetooth AutoEnable.")"
+                collapse_if_prev_skipped
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 243 "Skipped disabling Bluetooth AutoEnable.")"
             fi
             ;;
         2)
@@ -480,9 +511,10 @@ compression-algorithm = ${zram_algo}
 fs-type = swap
 swap-priority = 100
 EOF
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Updated ${zram_conf}.")"
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Updated ${zram_conf}.")"
             else
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped ZRAM modification.")"
+                collapse_if_prev_skipped
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 243 "Skipped ZRAM modification.")"
             fi
             ;;
         3)
@@ -490,7 +522,50 @@ EOF
             if [[ "$user_choice" == "Y" ]]; then
                 blacklist_conf="/etc/modprobe.d/blacklists.conf"
                 sudo mkdir -p /etc/modprobe.d
-                sudo tee "$blacklist_conf" >/dev/null <<'EOF'
+                if [[ "$PLATFORM" == "Desktop" ]]; then
+                    sudo tee "$blacklist_conf" >/dev/null <<'EOF'
+blacklist pcspkr
+blacklist sp5100_tco
+
+blacklist eeepc_wmi
+blacklist asus_wmi
+blacklist sparse_keymap
+blacklist rfkill
+
+blacklist mac_hid
+blacklist mousedev
+blacklist joydev
+
+blacklist ccp
+blacklist gpio_amdpt
+blacklist gpio_generic
+blacklist ee1004
+blacklist snd_hda_codec_atihdmi
+
+blacklist nouveau
+blacklist nova_core
+blacklist nova_drm
+
+install pcspkr /bin/false
+install sp5100_tco /bin/false
+
+install eeepc_wmi /bin/false
+install asus_wmi /bin/false
+install sparse_keymap /bin/false
+install rfkill /bin/false
+
+install mac_hid /bin/false
+install mousedev /bin/false
+install joydev /bin/false
+
+install ccp /bin/false
+install gpio_amdpt /bin/false
+install gpio_generic /bin/false
+install ee1004 /bin/false
+install snd_hda_codec_atihdmi /bin/false
+EOF
+                else
+                    sudo tee "$blacklist_conf" >/dev/null <<'EOF'
 blacklist mei
 blacklist mei_me
 blacklist mei_hdcp
@@ -521,79 +596,91 @@ install intel_pmc_pwrm_telemetry /bin/false
 
 install intel_oc_wdt /bin/false
 EOF
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Updated ${blacklist_conf}.")"
+                fi
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Updated ${blacklist_conf}.")"
             else
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped kernel module blacklisting.")"
+                collapse_if_prev_skipped
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 243 "Skipped kernel module blacklisting.")"
             fi
             ;;
         5)
             # Question 6: Import configurations?
             if [[ "$user_choice" == "Y" ]]; then
-                platform_dir="laptop"
-                if [[ "$PLATFORM" == "Desktop" ]]; then
-                    platform_dir="desktop"
+                local has_hyprland=0
+                if pacman -Qq hyprland >/dev/null 2>&1 || command -v Hyprland >/dev/null 2>&1 || command -v hyprctl >/dev/null 2>&1; then
+                    has_hyprland=1
                 fi
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Pulling configurations (${platform_dir}) from GitHub...")"
 
-                tmp_dotfiles="$(mktemp -d /tmp/oobe_dotfiles.XXXXXX)"
-                pull_ok=0
-                if command -v git >/dev/null 2>&1; then
-                    if git clone --depth 1 https://github.com/vunts32cs/oobe-for-cachyos.git "$tmp_dotfiles/repo" 2>&1 | tee -a "$SCREEN_LOG"; then
-                        pull_ok=1
+                if (( has_hyprland == 1 )); then
+                    platform_dir="laptop"
+                    if [[ "$PLATFORM" == "Desktop" ]]; then
+                        platform_dir="desktop"
                     fi
-                elif command -v curl >/dev/null 2>&1; then
-                    mkdir -p "$tmp_dotfiles/repo"
-                    if curl -fsSL https://github.com/vunts32cs/oobe-for-cachyos/archive/refs/heads/main.tar.gz | tar -xz -C "$tmp_dotfiles/repo" --strip-components=1 2>&1 | tee -a "$SCREEN_LOG"; then
-                        pull_ok=1
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Pulling configurations (${platform_dir}) from GitHub...")"
+
+                    tmp_dotfiles="$(mktemp -d /tmp/oobe_dotfiles.XXXXXX)"
+                    pull_ok=0
+                    if command -v git >/dev/null 2>&1; then
+                        if git clone --depth 1 https://github.com/vunts32cs/oobe-for-cachyos.git "$tmp_dotfiles/repo" 2>&1 | tee -a "$SCREEN_LOG"; then
+                            pull_ok=1
+                        fi
+                    elif command -v curl >/dev/null 2>&1; then
+                        mkdir -p "$tmp_dotfiles/repo"
+                        if curl -fsSL https://github.com/vunts32cs/oobe-for-cachyos/archive/refs/heads/main.tar.gz | tar -xz -C "$tmp_dotfiles/repo" --strip-components=1 2>&1 | tee -a "$SCREEN_LOG"; then
+                            pull_ok=1
+                        fi
+                    else
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 196 "Error: Neither git nor curl is available to pull dotfiles from GitHub.")"
                     fi
+
+                    if (( pull_ok == 1 )); then
+                        src_assets="$tmp_dotfiles/repo/assets/$platform_dir"
+                        if [[ -d "$src_assets/hypr" ]]; then
+                            mkdir -p "$HOME/.config"
+                            rm -rf "$HOME/.config/hypr"
+                            cp -r "$src_assets/hypr" "$HOME/.config/hypr"
+                            out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Imported hypr folder to $HOME/.config/hypr.")"
+                        else
+                            out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "assets/${platform_dir}/hypr not found in repository. Skipping hypr import.")"
+                        fi
+
+                        if [[ -f "$src_assets/noctalia-config.toml" ]]; then
+                            mkdir -p "$HOME/.config/noctalia"
+                            cp -f "$src_assets/noctalia-config.toml" "$HOME/.config/noctalia/noctalia-config.toml"
+                            out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Imported noctalia-config.toml to $HOME/.config/noctalia/noctalia-config.toml.")"
+                        else
+                            out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "assets/${platform_dir}/noctalia-config.toml not found in repository. Skipping noctalia import.")"
+                        fi
+
+                        if [[ -f "$src_assets/foot.ini" ]]; then
+                            mkdir -p "$HOME/.config/foot"
+                            cp -f "$src_assets/foot.ini" "$HOME/.config/foot/foot.ini"
+                            out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Imported foot.ini to $HOME/.config/foot/foot.ini.")"
+                        elif [[ "$PLATFORM" == "Laptop" ]]; then
+                            out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "assets/${platform_dir}/foot.ini not found in repository. Skipping foot import.")"
+                        fi
+                    elif command -v git >/dev/null 2>&1 || command -v curl >/dev/null 2>&1; then
+                        out "$(CLICOLOR_FORCE=1 gum style --foreground 196 "Failed to pull dotfiles from GitHub.")"
+                    fi
+                    rm -rf "$tmp_dotfiles"
                 else
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 196 "Error: Neither git nor curl is available to pull dotfiles from GitHub.")"
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 243 "Hyprland is not installed. Skipping Hyprland configuration import.")"
                 fi
-
-                if (( pull_ok == 1 )); then
-                    src_assets="$tmp_dotfiles/repo/assets/$platform_dir"
-                    if [[ -d "$src_assets/hypr" ]]; then
-                        mkdir -p "$HOME/.config"
-                        rm -rf "$HOME/.config/hypr"
-                        cp -r "$src_assets/hypr" "$HOME/.config/hypr"
-                        out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Imported hypr folder to $HOME/.config/hypr.")"
-                    else
-                        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "assets/${platform_dir}/hypr not found in repository. Skipping hypr import.")"
-                    fi
-
-                    if [[ -f "$src_assets/noctalia-config.toml" ]]; then
-                        mkdir -p "$HOME/.config/noctalia"
-                        cp -f "$src_assets/noctalia-config.toml" "$HOME/.config/noctalia/noctalia-config.toml"
-                        out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Imported noctalia-config.toml to $HOME/.config/noctalia/noctalia-config.toml.")"
-                    else
-                        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "assets/${platform_dir}/noctalia-config.toml not found in repository. Skipping noctalia import.")"
-                    fi
-
-                    if [[ -f "$src_assets/foot.ini" ]]; then
-                        mkdir -p "$HOME/.config/foot"
-                        cp -f "$src_assets/foot.ini" "$HOME/.config/foot/foot.ini"
-                        out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Imported foot.ini to $HOME/.config/foot/foot.ini.")"
-                    elif [[ "$PLATFORM" == "Laptop" ]]; then
-                        out "$(CLICOLOR_FORCE=1 gum style --foreground 214 "assets/${platform_dir}/foot.ini not found in repository. Skipping foot import.")"
-                    fi
-                elif command -v git >/dev/null 2>&1 || command -v curl >/dev/null 2>&1; then
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 196 "Failed to pull dotfiles from GitHub.")"
-                fi
-                rm -rf "$tmp_dotfiles"
 
                 mkdir -p "$HOME/.config/autostart"
                 cat <<'EOF' > "$HOME/.config/autostart/arch-update-tray.desktop"
 [Desktop Entry]
 Hidden=true
 EOF
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Updated $HOME/.config/autostart/arch-update-tray.desktop.")"
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Updated $HOME/.config/autostart/arch-update-tray.desktop.")"
 
-                if command -v hyprctl >/dev/null 2>&1; then
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Reloading Hyprland configuration...")"
+                if (( has_hyprland == 1 )) && command -v hyprctl >/dev/null 2>&1; then
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Reloading Hyprland configuration...")"
                     hyprctl reload 2>&1 | tee -a "$SCREEN_LOG"
                 fi
             else
-                out "$(CLICOLOR_FORCE=1 gum style --foreground 245 "Skipped importing configurations.")"
+                collapse_if_prev_skipped
+                out "$(CLICOLOR_FORCE=1 gum style --foreground 243 "Skipped importing configurations.")"
             fi
             ;;
     esac
@@ -662,13 +749,13 @@ completion_prompt() {
     local timeout_str=""
 
     local btn_ok_sel btn_ok_unsel btn_back_sel btn_back_unsel
-    btn_ok_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 230 "   Okay   ")"
-    btn_ok_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 254 "   Okay   ")"
-    btn_back_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 230 "   Go back to the questions list   ")"
-    btn_back_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 254 "   Go back to the questions list   ")"
+    btn_ok_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 15 "   Okay   ")"
+    btn_ok_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 243 "   Okay   ")"
+    btn_back_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 15 "   Go back to the questions list   ")"
+    btn_back_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 243 "   Go back to the questions list   ")"
 
     local help_line
-    help_line=$'\033[38;5;241m←→\033[m \033[38;5;239mtoggle\033[38;5;237m • \033[38;5;241menter\033[m \033[38;5;239msubmit\033[m'
+    help_line=$'\033[38;5;15m←→\033[m \033[38;5;243mtoggle • \033[38;5;15menter\033[m \033[38;5;243msubmit\033[m'
 
     local reboot_suffix=""
     if any_question_applied; then
@@ -742,13 +829,13 @@ gum_confirm_simple() {
     prompt_styled="$(CLICOLOR_FORCE=1 gum style --foreground 15 "$prompt_text")"
 
     local btn_yes_sel btn_yes_unsel btn_no_sel btn_no_unsel
-    btn_yes_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 230 "   Yes   ")"
-    btn_yes_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 254 "   Yes   ")"
-    btn_no_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 230 "   No   ")"
-    btn_no_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 254 "   No   ")"
+    btn_yes_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 15 "   Yes   ")"
+    btn_yes_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 243 "   Yes   ")"
+    btn_no_sel="$(CLICOLOR_FORCE=1 gum style --background 214 --foreground 15 "   No   ")"
+    btn_no_unsel="$(CLICOLOR_FORCE=1 gum style --background 235 --foreground 243 "   No   ")"
 
     local help_line
-    help_line=$'\033[38;5;241m←→\033[m \033[38;5;239mtoggle\033[38;5;237m • \033[38;5;241menter\033[m \033[38;5;239msubmit\033[38;5;237m • \033[38;5;241my\033[m \033[38;5;239mYes\033[38;5;237m • \033[38;5;241mn\033[m \033[38;5;239mNo\033[m'
+    help_line=$'\033[38;5;15m←→\033[m \033[38;5;243mtoggle • \033[38;5;15menter\033[m \033[38;5;243msubmit • \033[38;5;15my\033[m \033[38;5;243mYes • \033[38;5;15mn\033[m \033[38;5;243mNo\033[m'
 
     printf "\n\n\n\n\n\033[5A\033[s\033[?25l"
 
@@ -806,7 +893,7 @@ flatpak_packages_menu() {
     local header_line
     header_line="$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "$(format_question_prompt 5 "${QUESTIONS[4]}")")"
     local help_line
-    help_line=$'\033[38;5;241m↓↑\033[m \033[38;5;239mnavigate\033[38;5;237m • \033[38;5;241menter\033[m \033[38;5;239mselect\033[38;5;237m • \033[38;5;241mq/esc\033[m \033[38;5;239mfinish\033[38;5;237m • \033[38;5;241mtab\033[m \033[38;5;239mswitch between questions\033[m'
+    help_line=$'\033[38;5;15m↓↑\033[m \033[38;5;243mnavigate • \033[38;5;15menter\033[m \033[38;5;243mselect • \033[38;5;15mq/esc\033[m \033[38;5;243mfinish • \033[38;5;15mtab\033[m \033[38;5;243mswitch between questions\033[m'
 
     while true; do
         for (( i = 0; i < menu_height; i++ )); do
@@ -892,7 +979,7 @@ flatpak_packages_menu() {
                     if ! countdown_action "Will install ${prog_name}"; then
                         continue
                     fi
-                    out "$(CLICOLOR_FORCE=1 gum style --foreground 86 "Installing ${prog_name} (${prog_ref})...")"
+                    out "$(CLICOLOR_FORCE=1 gum style --foreground 99 "Installing ${prog_name} (${prog_ref})...")"
                     flatpak install -y flathub "$prog_ref" 2>&1 | tee -a "$SCREEN_LOG"
                     FLATPAK_STATUS[cursor]=1
                     update_flatpak_question_status
@@ -1023,4 +1110,5 @@ while true; do
         out "$(CLICOLOR_FORCE=1 gum style --foreground 99 --bold "Next question (${next_q_num}/${TOTAL_QUESTIONS}) is answered (${next_state}). To another question...")"
         current_q="$(first_uncompleted_question)"
     fi
+    out_spacer
 done
