@@ -134,7 +134,7 @@ COMPLETED=(0 0 0 0 0 0)
 
 FLATPAK_NAMES=("Sober" "Easy Effects" "OBS Studio" "Wayland Hotkeys" "Vinegar")
 FLATPAK_REFS=(
-    "app/org.vinegarhq.Sober/x86_64/stable"
+    "org.vinegarhq.Sober"
     "com.github.wwmm.easyeffects"
     "com.obsproject.Studio"
     "com.obsproject.Studio.Plugin.WaylandHotkeys"
